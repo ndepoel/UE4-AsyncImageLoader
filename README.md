@@ -28,6 +28,8 @@ ImageWrapper is required for identifying image formats and decompressing them to
 
 Add the following code files to the Source folder of your project. You should modify the precompiled header include directive and log category to fit your project.
 
+### Header
+
 ```cpp
 #pragma once
 
@@ -47,8 +49,8 @@ class UImageLoader : public UObject
 	GENERATED_BODY()
 
 public:
-	/** 
-	Loads an image file from disk into a texture on a worker thread. This will not block the calling thread. 
+	/**
+	Loads an image file from disk into a texture on a worker thread. This will not block the calling thread.
 	@return An image loader object with an OnLoadCompleted event that users can bind to, to get notified when loading is done.
 	*/
 	UFUNCTION(BlueprintCallable, Category = ImageLoader, meta = (HidePin = "Outer", DefaultToSelf = "Outer"))
@@ -100,17 +102,27 @@ private:
 };
 ```
 
+### Source
+
 ```cpp
-// This includes the precompiled header. Change this to whatever is relevant for your project.
+// TODO This includes the precompiled header. Change this to whatever is relevant for your project.
 #include "TestProject.h"
 
-#include "ImageLoader.h"
-#include "ImageWrapper.h"
-#include "RenderUtils.h"
+#include "Async/Async.h"
 #include "Engine/Texture2D.h"
+#include "Misc/FileHelper.h"
+#include "Modules/ModuleManager.h"
 
-// Change the UE_LOG log category name below to whichever log category you want to use.
-#define UIL_LOG(Verbosity, Format, ...)		UE_LOG(LogTemp, Verbosity, Format, __VA_ARGS__)
+#include "ImageLoader.h"
+#include "IImageWrapper.h"
+#include "IImageWrapperModule.h"
+#include "RenderUtils.h"
+
+// TODO Change the UE_LOG log category name below to whichever log category you want to use.
+#define UIL_LOG(Verbosity, Format, ...)	UE_LOG(LogTemp, Verbosity, Format, __VA_ARGS__)
+
+// Module loading is not allowed outside of the main thread, so we load the ImageWrapper module ahead of time.
+static IImageWrapperModule& ImageWrapperModule = FModuleManager::LoadModuleChecked<IImageWrapperModule>(TEXT("ImageWrapper"));
 
 UImageLoader* UImageLoader::LoadImageFromDiskAsync(UObject* Outer, const FString& ImagePath)
 {
@@ -130,8 +142,8 @@ void UImageLoader::LoadImageAsync(UObject* Outer, const FString& ImagePath)
 		// At this point, loading is done and the Future contains a value.
 		if (Future.IsValid())
 		{
-			// Notify listeners about the loaded texture.
-			LoadCompleted.Broadcast(Future.Get());
+			// Notify listeners about the loaded texture on the game thread.
+			AsyncTask(ENamedThreads::GameThread, [this]() { LoadCompleted.Broadcast(Future.Get()); });
 		}
 	});
 }
@@ -140,7 +152,7 @@ TFuture<UTexture2D*> UImageLoader::LoadImageFromDiskAsync(UObject* Outer, const 
 {
 	// Run the image loading function asynchronously through a lambda expression, capturing the ImagePath string by value.
 	// Run it on the thread pool, so we can load multiple images simultaneously without interrupting other tasks.
-	return Async<UTexture2D*>(EAsyncExecution::ThreadPool, [=]() { return LoadImageFromDisk(Outer, ImagePath); }, CompletionCallback);
+	return Async(EAsyncExecution::ThreadPool, [=]() { return LoadImageFromDisk(Outer, ImagePath); }, CompletionCallback);
 }
 
 UTexture2D* UImageLoader::LoadImageFromDisk(UObject* Outer, const FString& ImagePath)
@@ -161,8 +173,7 @@ UTexture2D* UImageLoader::LoadImageFromDisk(UObject* Outer, const FString& Image
 	}
 
 	// Detect the image type using the ImageWrapper module
-	IImageWrapperModule& ImageWrapperModule = FModuleManager::LoadModuleChecked<IImageWrapperModule>(TEXT("ImageWrapper"));
-	EImageFormat::Type ImageFormat = ImageWrapperModule.DetectImageFormat(FileData.GetData(), FileData.Num());
+	EImageFormat ImageFormat = ImageWrapperModule.DetectImageFormat(FileData.GetData(), FileData.Num());
 	if (ImageFormat == EImageFormat::Invalid)
 	{
 		UIL_LOG(Error, TEXT("Unrecognized image file format: %s"), *ImagePath);
@@ -170,7 +181,7 @@ UTexture2D* UImageLoader::LoadImageFromDisk(UObject* Outer, const FString& Image
 	}
 
 	// Create an image wrapper for the detected image format
-	IImageWrapperPtr ImageWrapper = ImageWrapperModule.CreateImageWrapper(ImageFormat);
+	TSharedPtr<IImageWrapper> ImageWrapper = ImageWrapperModule.CreateImageWrapper(ImageFormat);
 	if (!ImageWrapper.IsValid())
 	{
 		UIL_LOG(Error, TEXT("Failed to create image wrapper for file: %s"), *ImagePath);
@@ -195,6 +206,8 @@ UTexture2D* UImageLoader::LoadImageFromDisk(UObject* Outer, const FString& Image
 UTexture2D* UImageLoader::CreateTexture(UObject* Outer, const TArray<uint8>& PixelData, int32 InSizeX, int32 InSizeY, EPixelFormat InFormat, FName BaseName)
 {
 	// Shamelessly copied from UTexture2D::CreateTransient with a few modifications
+	LLM_SCOPE(ELLMTag::Textures);
+
 	if (InSizeX <= 0 || InSizeY <= 0 ||
 		(InSizeX % GPixelFormats[InFormat].BlockSizeX) != 0 ||
 		(InSizeY % GPixelFormats[InFormat].BlockSizeY) != 0)
@@ -215,7 +228,8 @@ UTexture2D* UImageLoader::CreateTexture(UObject* Outer, const TArray<uint8>& Pix
 	// Allocate first mipmap and upload the pixel data
 	int32 NumBlocksX = InSizeX / GPixelFormats[InFormat].BlockSizeX;
 	int32 NumBlocksY = InSizeY / GPixelFormats[InFormat].BlockSizeY;
-	FTexture2DMipMap* Mip = new(NewTexture->PlatformData->Mips) FTexture2DMipMap();
+	FTexture2DMipMap* Mip = new FTexture2DMipMap();
+	NewTexture->PlatformData->Mips.Add(Mip);
 	Mip->SizeX = InSizeX;
 	Mip->SizeY = InSizeY;
 	Mip->BulkData.Lock(LOCK_READ_WRITE);
