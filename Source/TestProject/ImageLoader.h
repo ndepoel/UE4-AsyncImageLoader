@@ -16,8 +16,8 @@ class UImageLoader : public UObject
 	GENERATED_BODY()
 
 public:
-	/** 
-	Loads an image file from disk into a texture on a worker thread. This will not block the calling thread. 
+	/**
+	Loads an image file from disk into a texture on a worker thread. This will not block the calling thread.
 	@return An image loader object with an OnLoadCompleted event that users can bind to, to get notified when loading is done.
 	*/
 	UFUNCTION(BlueprintCallable, Category = ImageLoader, meta = (HidePin = "Outer", DefaultToSelf = "Outer"))
