@@ -10,6 +10,6 @@ public class TestProject : ModuleRules
 
 		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "InputCore", "HeadMountedDisplay" });
 
-        PrivateDependencyModuleNames.AddRange(new string[] { "ImageWrapper", "RenderCore" });
-    }
+		PrivateDependencyModuleNames.AddRange(new string[] { "ImageWrapper", "RenderCore" });
+	}
 }
