@@ -82,10 +82,9 @@ UTexture2D* UImageLoader::LoadImageFromDisk(UObject* Outer, const FString& Image
 	}
 
 	// Decompress the image data
-	const TArray<uint8>* RawData = nullptr;
+	TArray64<uint8> RawData;
 	ImageWrapper->SetCompressed(FileData.GetData(), FileData.Num());
-	ImageWrapper->GetRaw(ERGBFormat::BGRA, 8, RawData);
-	if (RawData == nullptr)
+	if (!ImageWrapper->GetRaw(ERGBFormat::BGRA, 8, RawData))
 	{
 		UIL_LOG(Error, TEXT("Failed to decompress image file: %s"), *ImagePath);
 		return nullptr;
@@ -93,10 +92,10 @@ UTexture2D* UImageLoader::LoadImageFromDisk(UObject* Outer, const FString& Image
 
 	// Create the texture and upload the uncompressed image data
 	FString TextureBaseName = TEXT("Texture_") + FPaths::GetBaseFilename(ImagePath);
-	return CreateTexture(Outer, *RawData, ImageWrapper->GetWidth(), ImageWrapper->GetHeight(), EPixelFormat::PF_B8G8R8A8, FName(*TextureBaseName));
+	return CreateTexture(Outer, RawData, ImageWrapper->GetWidth(), ImageWrapper->GetHeight(), EPixelFormat::PF_B8G8R8A8, FName(*TextureBaseName));
 }
 
-UTexture2D* UImageLoader::CreateTexture(UObject* Outer, const TArray<uint8>& PixelData, int32 InSizeX, int32 InSizeY, EPixelFormat InFormat, FName BaseName)
+UTexture2D* UImageLoader::CreateTexture(UObject* Outer, const TArray64<uint8>& PixelData, int32 InSizeX, int32 InSizeY, EPixelFormat InFormat, FName BaseName)
 {
 	// Shamelessly copied from UTexture2D::CreateTransient with a few modifications
 	LLM_SCOPE(ELLMTag::Textures);
